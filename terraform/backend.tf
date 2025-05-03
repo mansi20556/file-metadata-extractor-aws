@@ -1,9 +1,9 @@
 terraform {
   backend "s3" {
-    bucket         = "extract-file-metadata"
+    bucket         = "file-metadata-extract"
     key            = "lambda-project/terraform.tfstate"
     region         = "us-east-1"
-    dynamodb_table = "file-metadata"
+    dynamodb_table = "MetadataTable"
     encrypt        = true
   }
 }
