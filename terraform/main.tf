@@ -2,22 +2,42 @@ provider "aws" {
   region = var.aws_region
 }
 
-# Create an S3 bucket to trigger Lambda when files are uploaded
+# S3 Bucket - Use the manually created bucket
 resource "aws_s3_bucket" "uploads" {
-  bucket = "mansi-upload-bucket"
-  force_destroy = true
+  bucket = "extract-file-metadata"  # Static bucket name
+  acl    = "private"
 }
 
-# Create IAM role for Lambda
-resource "aws_iam_role" "lambda_exec_role" {
-  name = "lambda_exec_role"
+# DynamoDB Table - Use the manually created table
+resource "aws_dynamodb_table" "metadata_table" {
+  name         = "file-metadata"  # Static table name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "LockID"
 
+  attribute {
+    name = "LockID"
+    type = "S"
+  }
+
+  attribute {
+    name = "Timestamp"
+    type = "S"
+  }
+
+  tags = {
+    "Name" = "file-metadata"
+  }
+}
+
+# IAM Role for Lambda Execution
+resource "aws_iam_role" "lambda_exec_role" {
+  name = "lambda_exec_role"  # Static IAM role name
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
       {
-        Action = "sts:AssumeRole"
-        Effect = "Allow"
+        Action    = "sts:AssumeRole"
+        Effect    = "Allow"
         Principal = {
           Service = "lambda.amazonaws.com"
         }
@@ -26,91 +46,29 @@ resource "aws_iam_role" "lambda_exec_role" {
   })
 }
 
-# Attach inline policy with S3 + DynamoDB + logs permissions to IAM Role
-resource "aws_iam_role_policy" "lambda_policy" {
-  name = "lambda_policy"
-  role = aws_iam_role.lambda_exec_role.id
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Action = [
-          "logs:CreateLogGroup",
-          "logs:CreateLogStream",
-          "logs:PutLogEvents"
-        ],
-        Effect = "Allow",
-        Resource = "*"
-      },
-      {
-        Action = [
-          "s3:GetObject",
-          "s3:ListBucket",
-          "s3:HeadObject"
-        ],
-        Effect = "Allow",
-        Resource = [
-          aws_s3_bucket.uploads.arn,
-          "${aws_s3_bucket.uploads.arn}/*"
-        ]
-      },
-      {
-        Action = [
-          "dynamodb:PutItem"
-        ],
-        Effect = "Allow",
-        Resource = aws_dynamodb_table.metadata_table.arn
-      }
-    ]
-  })
-}
-
-# Create DynamoDB table to store metadata
-resource "aws_dynamodb_table" "metadata_table" {
-  name           = "MetadataTable"
-  billing_mode   = "PAY_PER_REQUEST"
-  hash_key       = "FileName"
-
-  attribute {
-    name = "FileName"
-    type = "S"
-  }
-}
-
-# Create Lambda Function
+# Lambda Function
 resource "aws_lambda_function" "file_metadata_extractor" {
-  function_name = "fileMetadataExtractor"
-  role          = aws_iam_role.lambda_exec_role.arn
+  function_name = "fileMetadataExtractor"  # Static function name
+  s3_bucket     = aws_s3_bucket.uploads.bucket
+  s3_key        = "lambda.zip"
+  runtime       = "python3.8"
   handler       = "handler.lambda_handler"
-  runtime       = "python3.12"
-  filename      = "../lambda.zip"
-  timeout       = 10
-
-  environment {
-    variables = {
-      DYNAMODB_TABLE = aws_dynamodb_table.metadata_table.name
-    }
-  }
+  role          = aws_iam_role.lambda_exec_role.arn
 }
 
-# S3 event to trigger Lambda
-resource "aws_s3_bucket_notification" "bucket_notification" {
-  bucket = aws_s3_bucket.uploads.id
-
-  lambda_function {
-    lambda_function_arn = aws_lambda_function.file_metadata_extractor.arn
-    events              = ["s3:ObjectCreated:*"]
-  }
-
-  depends_on = [aws_lambda_permission.allow_s3]
-}
-
-# Grant S3 permission to invoke Lambda
+# Lambda Permissions for S3 and DynamoDB Access
 resource "aws_lambda_permission" "allow_s3" {
-  statement_id  = "AllowExecutionFromS3"
+  statement_id  = "AllowS3"
   action        = "lambda:InvokeFunction"
-  function_name = aws_lambda_function.file_metadata_extractor.function_name
   principal     = "s3.amazonaws.com"
+  function_name = aws_lambda_function.file_metadata_extractor.function_name
   source_arn    = aws_s3_bucket.uploads.arn
+}
+
+resource "aws_lambda_permission" "allow_dynamodb" {
+  statement_id  = "AllowDynamoDB"
+  action        = "lambda:InvokeFunction"
+  principal     = "dynamodb.amazonaws.com"
+  function_name = aws_lambda_function.file_metadata_extractor.function_name
+  source_arn    = aws_dynamodb_table.metadata_table.arn
 }
