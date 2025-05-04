@@ -1,8 +1,3 @@
-# Ignore deployment zip and Terraform cache
-lambda.zip
-.terraform/
-.terraform.lock.hcl
-# Terraform state
-terraform.tfstate
-terraform.tfstate.backup
-.crash/
+*.pyc
+__pycache__/
+.env
