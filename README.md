@@ -47,5 +47,4 @@ You need the following AWS resources set up **from the AWS Console**:
 - Upload any file to your S3 bucket.
 - Go to **DynamoDB → Explore Table Items** to view metadata.
 
-## 📂 File Structure
 
